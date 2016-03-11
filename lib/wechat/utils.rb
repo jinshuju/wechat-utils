@@ -13,7 +13,7 @@ module Wechat
       "https://open.weixin.qq.com/connect/oauth2/authorize?#{hash_to_query common_parts }&#{CGI::escape redirect_url}#wechat_redirect"
     end
 
-    def self.create_oauth_url_for_openid(app_id, app_secret, code)
+    def self.create_oauth_url_for_openid app_id, app_secret, code
       query_parts = {
         appid: app_id,
         secret: app_secret,
@@ -23,7 +23,17 @@ module Wechat
       "https://api.weixin.qq.com/sns/oauth2/access_token?#{hash_to_query query_parts}"
     end
 
-    def self.get_request(url)
+    def self.fetch_openid app_id, app_secret, code
+      url = create_oauth_url_for_openid app_id, app_secret, code
+      response = get_request url
+      if response['openid'].nil?
+        return nil, response
+      else
+        return response['openid'], nil
+      end
+    end
+
+    def self.get_request url
       request_opts = {
         :url => url,
         :verify_ssl => false,

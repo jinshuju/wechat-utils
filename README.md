@@ -31,8 +31,10 @@ Wechat::Utils.create_oauth_url_for_code 'your_appid', 'http://yourhost.com', tru
 
 # get openid id url
 Wechat::Utils.create_oauth_url_for_openid 'your_appid', 'app_secret', 'code'
-```
 
+# fetch openid
+Wechat::Utils.fetch_openid 'your_appid', 'app_secret', 'callback_code'
+```
 
 ## Contributing
 

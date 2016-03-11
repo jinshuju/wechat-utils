@@ -40,4 +40,15 @@ class Wechat::UtilsTest < Minitest::Test
     assert_equal({'access_token' => 'token', 'openid' => 'weixin_openid'}, Wechat::Utils.get_request('url'))
   end
 
+  def test_it_should_return_openid_and_nil_error
+    Wechat::Utils.expects(:create_oauth_url_for_openid).with('your_appid', 'app_secret', 'callback_code').returns 'url'
+    Wechat::Utils.expects(:get_request).with('url').returns({'access_token' => 'token', 'openid' => 'weixin_openid'})
+    assert_equal(['weixin_openid', nil], Wechat::Utils.fetch_openid('your_appid', 'app_secret', 'callback_code'))
+  end
+
+  def test_it_should_return_nil_openid_and_all_the_reponse_when_openid_is_nil
+    Wechat::Utils.expects(:create_oauth_url_for_openid).with('your_appid', 'app_secret', 'callback_code').returns 'url'
+    Wechat::Utils.expects(:get_request).with('url').returns({error: 'some error'})
+    assert_equal([nil, {error: 'some error'}], Wechat::Utils.fetch_openid('your_appid', 'app_secret', 'callback_code'))
+  end
 end

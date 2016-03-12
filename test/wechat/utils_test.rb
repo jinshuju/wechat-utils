@@ -2,18 +2,18 @@ require 'test_helper'
 
 class Wechat::UtilsTest < Minitest::Test
   def test_that_it_has_a_version_number
-    assert_equal '0.1.0', ::Wechat::Utils::VERSION
+    assert_equal '0.1.2', ::Wechat::Utils::VERSION
   end
 
   def test_it_should_return_snsapi_base_oauth_url_for_code
     actual = Wechat::Utils.create_oauth_url_for_code 'your_appid', 'http://yourhost.com', false, 'custom_state'
-    expected =  'https://open.weixin.qq.com/connect/oauth2/authorize?appid=your_appid&response_type=code&scope=snsapi_base&state=custom_state&redirect_uri=http%3A%2F%2Fyourhost.com#wechat_redirect'
+    expected =  'https://open.weixin.qq.com/connect/oauth2/authorize?appid=your_appid&redirect_uri=http%3A%2F%2Fyourhost.com&response_type=code&scope=snsapi_base&state=custom_state#wechat_redirect'
     assert_equal expected, actual
   end
 
   def test_it_should_return_snsapi_info_oauth_url_for_code
     actual = Wechat::Utils.create_oauth_url_for_code 'your_appid', 'http://yourhost.com', true, 'custom_state'
-    expected =  'https://open.weixin.qq.com/connect/oauth2/authorize?appid=your_appid&response_type=code&scope=snsapi_userinfo&state=custom_state&redirect_uri=http%3A%2F%2Fyourhost.com#wechat_redirect'
+    expected =  'https://open.weixin.qq.com/connect/oauth2/authorize?appid=your_appid&redirect_uri=http%3A%2F%2Fyourhost.com&response_type=code&scope=snsapi_userinfo&state=custom_state#wechat_redirect'
     assert_equal expected, actual
   end
 

@@ -6,11 +6,12 @@ module Wechat
     def self.create_oauth_url_for_code app_id, redirect_url, more_info = false, state=nil
       common_parts = {
         appid: app_id,
+        redirect_uri: CGI::escape(redirect_url),
         response_type: 'code',
         scope: more_info ? 'snsapi_userinfo' : 'snsapi_base',
         state: state
       }
-      "https://open.weixin.qq.com/connect/oauth2/authorize?#{hash_to_query common_parts }&redirect_uri=#{CGI::escape redirect_url}#wechat_redirect"
+      "https://open.weixin.qq.com/connect/oauth2/authorize?#{hash_to_query common_parts}#wechat_redirect"
     end
 
     def self.create_oauth_url_for_openid app_id, app_secret, code

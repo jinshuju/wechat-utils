@@ -10,7 +10,7 @@ module Wechat
         scope: more_info ? 'snsapi_userinfo' : 'snsapi_base',
         state: state
       }
-      "https://open.weixin.qq.com/connect/oauth2/authorize?#{hash_to_query common_parts }&#{CGI::escape redirect_url}#wechat_redirect"
+      "https://open.weixin.qq.com/connect/oauth2/authorize?#{hash_to_query common_parts }&redirect_uri=#{CGI::escape redirect_url}#wechat_redirect"
     end
 
     def self.create_oauth_url_for_openid app_id, app_secret, code

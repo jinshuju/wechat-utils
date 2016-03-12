@@ -2,7 +2,7 @@ require 'test_helper'
 
 class Wechat::UtilsTest < Minitest::Test
   def test_that_it_has_a_version_number
-    assert_equal '0.1.2', ::Wechat::Utils::VERSION
+    assert_equal '0.1.3', ::Wechat::Utils::VERSION
   end
 
   def test_it_should_return_snsapi_base_oauth_url_for_code

@@ -1,56 +1,94 @@
 require 'rest-client'
 require 'wechat/utils/version'
+require 'securerandom'
+
 
 module Wechat
   module Utils
-    def self.create_oauth_url_for_code app_id, redirect_url, more_info = false, state=nil
-      common_parts = {
-        appid: app_id,
-        redirect_uri: CGI::escape(redirect_url),
-        response_type: 'code',
-        scope: more_info ? 'snsapi_userinfo' : 'snsapi_base',
-        state: state
-      }
-      "https://open.weixin.qq.com/connect/oauth2/authorize?#{hash_to_query common_parts}#wechat_redirect"
-    end
-
-    def self.create_oauth_url_for_openid app_id, app_secret, code
-      query_parts = {
-        appid: app_id,
-        secret: app_secret,
-        code: code,
-        grant_type: 'authorization_code'
-      }
-      "https://api.weixin.qq.com/sns/oauth2/access_token?#{hash_to_query query_parts}"
-    end
-
-    def self.fetch_openid app_id, app_secret, code
-      url = create_oauth_url_for_openid app_id, app_secret, code
-      response = get_request url
-      if response['openid'].nil?
-        return nil, response
-      else
-        return response['openid'], nil
+    class << self
+      def create_oauth_url_for_code app_id, redirect_url, more_info = false, state=nil
+        common_parts = {
+          appid: app_id,
+          redirect_uri: CGI::escape(redirect_url),
+          response_type: 'code',
+          scope: more_info ? 'snsapi_userinfo' : 'snsapi_base',
+          state: state
+        }
+        "https://open.weixin.qq.com/connect/oauth2/authorize?#{hash_to_query common_parts}#wechat_redirect"
       end
-    end
 
-    def self.get_request url
-      request_opts = {
-        :url => url,
-        :verify_ssl => false,
-        :ssl_version => 'TLSv1',
-        :method => 'GET',
-        :headers => false,
-        :open_timeout => 30,
-        :timeout => 30
-      }
-      JSON.parse RestClient::Request.execute(request_opts).body
-    end
+      def create_oauth_url_for_openid app_id, app_secret, code
+        query_parts = {
+          appid: app_id,
+          secret: app_secret,
+          code: code,
+          grant_type: 'authorization_code'
+        }
+        "https://api.weixin.qq.com/sns/oauth2/access_token?#{hash_to_query query_parts}"
+      end
 
-    private
+      def fetch_openid_and_access_token app_id, app_secret, code
+        url = create_oauth_url_for_openid app_id, app_secret, code
+        response = get_request url
+        return response['openid'], response['access_token'], response
+      end
 
-    def self.hash_to_query hash
-      hash.map { |k, v| "#{k}=#{v}" }.join('&')
+      # access_token is get from oauth
+      def fetch_oauth_user_info access_token, openid
+        get_request "https://api.weixin.qq.com/sns/userinfo?access_token=#{access_token}&openid=#{openid}&lang=zh_CN"
+      end
+
+      # access_token is the global token
+      def fetch_user_info access_token, openid
+        get_request "https://api.weixin.qq.com/cgi-bin/user/info?access_token=#{access_token}&openid=#{openid}&lang=zh_CN"
+      end
+
+      def get_request url
+        request_opts = {
+          :url => url,
+          :verify_ssl => false,
+          :ssl_version => 'TLSv1',
+          :method => 'GET',
+          :headers => false,
+          :open_timeout => 30,
+          :timeout => 30
+        }
+        JSON.parse RestClient::Request.execute(request_opts).body
+      end
+
+      def fetch_jsapi_ticket access_token
+        response = get_request "https://api.weixin.qq.com/cgi-bin/ticket/getticket?access_token=#{access_token}&type=jsapi"
+        return response['ticket'], response
+      end
+
+      def fetch_global_access_token appid, secret
+        response = get_request "https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=#{appid}&secret=#{secret}"
+        return response['access_token'], response
+      end
+
+      def jsapi_params appid, url, jsapi_ticket
+        timestamp = Time.now.to_i
+        noncestr = SecureRandom.urlsafe_base64(12)
+        signature = sign_params timestamp: timestamp, noncestr: noncestr, jsapi_ticket: jsapi_ticket, url: url
+        {
+          appid: appid,
+          timestamp: timestamp,
+          noncestr: noncestr,
+          signature: signature,
+          url: url
+        }
+      end
+
+      private
+
+      def hash_to_query hash
+        hash.map { |k, v| "#{k}=#{v}" }.join('&')
+      end
+
+      def sign_params options
+        to_be_singed_string = options.sort.map { |key, value| "#{key}=#{value}" }.join("&")
+        Digest::SHA1.hexdigest to_be_singed_string
+      end
     end
   end
 end

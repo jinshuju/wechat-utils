@@ -34,6 +34,15 @@ Wechat::Utils.create_oauth_url_for_openid 'your_appid', 'app_secret', 'code'
 
 # fetch openid
 Wechat::Utils.fetch_openid 'your_appid', 'app_secret', 'callback_code'
+
+# fetch_user_info
+Wechat::Utils.fetch_user_info 'your_access_token', 'your_openid'
+
+# fetch_jsapi_ticket
+Wechat::Utils.fetch_jsapi_ticket 'your_access_token'
+
+# jsapi_params
+Wechat::Utils.jsapi_params 'your_appid', 'url', 'jsapi_ticket'
 ```
 
 ## Contributing

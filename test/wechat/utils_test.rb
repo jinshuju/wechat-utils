@@ -2,7 +2,7 @@ require 'test_helper'
 
 class Wechat::UtilsTest < Minitest::Test
   def test_that_it_has_a_version_number
-    assert_equal '0.1.3', ::Wechat::Utils::VERSION
+    assert_equal '0.2.0', ::Wechat::Utils::VERSION
   end
 
   def test_it_should_return_snsapi_base_oauth_url_for_code
@@ -28,18 +28,18 @@ class Wechat::UtilsTest < Minitest::Test
     response = mock('response')
     ::RestClient::Request.expects(:execute).with(common_request_opts 'url').returns response
     response.stubs(:body).returns response_body
-    assert_equal({'access_token' => 'token', 'openid' => 'weixin_openid'}, Wechat::Utils.get_request('url'))
+    assert_equal({'access_token' => 'token', 'openid' => 'weixin_openid'}, Wechat::Utils.get_request('url', {}))
   end
 
   def test_it_should_return_openid_and_nil_error
     Wechat::Utils.expects(:create_oauth_url_for_openid).with('your_appid', 'app_secret', 'callback_code').returns 'url'
-    Wechat::Utils.expects(:get_request).with('url').returns({'access_token' => 'token', 'openid' => 'weixin_openid'})
+    Wechat::Utils.expects(:get_request).with('url', {}).returns({'access_token' => 'token', 'openid' => 'weixin_openid'})
     assert_equal(['weixin_openid', 'token', {'access_token' => 'token', 'openid' => 'weixin_openid'}], Wechat::Utils.fetch_openid_and_access_token('your_appid', 'app_secret', 'callback_code'))
   end
 
   def test_it_should_return_nil_openid_and_all_the_reponse_when_openid_is_nil
     Wechat::Utils.expects(:create_oauth_url_for_openid).with('your_appid', 'app_secret', 'callback_code').returns 'url'
-    Wechat::Utils.expects(:get_request).with('url').returns({error: 'some error'})
+    Wechat::Utils.expects(:get_request).with('url', {}).returns({error: 'some error'})
     assert_equal([nil, nil, {error: 'some error'}], Wechat::Utils.fetch_openid_and_access_token('your_appid', 'app_secret', 'callback_code'))
   end
 
@@ -59,6 +59,15 @@ class Wechat::UtilsTest < Minitest::Test
     ::RestClient::Request.expects(:execute).with(common_request_opts expected_url).returns response
     response.stubs(:body).returns response_body
     Wechat::Utils.fetch_user_info 'your_token', 'your_openid'
+  end
+
+  def test_it_should_fetch_user_info_with_timeout
+    response_body = "{\"openid\":\"openid\",\"nickname\":\"warmwind\"}"
+    response = mock('response')
+    expected_url = 'https://api.weixin.qq.com/cgi-bin/user/info?access_token=your_token&openid=your_openid&lang=zh_CN'
+    ::RestClient::Request.expects(:execute).with(common_request_opts expected_url, {timeout: 1}).returns response
+    response.stubs(:body).returns response_body
+    Wechat::Utils.fetch_user_info 'your_token', 'your_openid', request_opts: {timeout: 1}
   end
 
   def test_it_should_return_jsapi_ticket_and_resposne
@@ -87,15 +96,14 @@ class Wechat::UtilsTest < Minitest::Test
   end
 
   private
-  def common_request_opts url
+  def common_request_opts url, extra_opts = {}
     {
       :url => url,
       :verify_ssl => false,
       :ssl_version => 'TLSv1',
       :method => 'GET',
       :headers => false,
-      :open_timeout => 30,
       :timeout => 30
-    }
+    }.merge extra_opts
   end
 end

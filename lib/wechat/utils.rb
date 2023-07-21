@@ -48,7 +48,7 @@ module Wechat
         request_opts = {
           :url => url,
           :verify_ssl => false,
-          :ssl_version => 'TLSv1',
+          :ssl_version => 'TLSv1_2',
           :method => 'GET',
           :headers => false,
           :timeout => 30

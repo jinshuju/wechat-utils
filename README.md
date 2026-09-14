@@ -43,7 +43,49 @@ Wechat::Utils.fetch_jsapi_ticket 'your_access_token'
 
 # jsapi_params
 Wechat::Utils.jsapi_params 'your_appid', 'url', 'jsapi_ticket'
+
+# get_request / post_request - used internally by the helpers above, and
+# available directly for any other WeChat endpoint. Requests reuse a
+# pooled keep-alive connection per (thread, SSL config, proxy).
+Wechat::Utils.get_request 'https://api.weixin.qq.com/cgi-bin/...'
+Wechat::Utils.post_request 'https://api.weixin.qq.com/cgi-bin/...', {action_name: 'QR_STR_SCENE'}
+
+# Supported extra_opts keys for both:
+#   :timeout, :open_timeout, :read_timeout, :write_timeout - seconds; nil disables the timeout
+#   :headers      - Hash of extra request headers (string values)
+#   :proxy        - proxy URL; false disables proxies, including the http_proxy / https_proxy env vars
+#   :verify_ssl   - false (default) / true / OpenSSL::SSL::VERIFY_*
+#   :ssl_version, :ssl_min_version, :ssl_max_version - OpenSSL names
+#   :ssl_ca_file
+# Any other key raises ArgumentError.
 ```
+
+## Breaking changes from 0.2.x
+
+0.3.0 replaces `rest-client` with Faraday + `faraday-net_http_persistent`
+(pooled, keep-alive connections). This changes behavior visible to callers:
+
+- **Error classes.** Failures now raise `Faraday::*` (`Faraday::ClientError`,
+  `Faraday::ServerError`, `Faraday::TimeoutError`, `Faraday::SSLError`,
+  `Faraday::ConnectionFailed`), not `RestClient::*`. Update any `rescue`
+  clauses.
+- **Semian.** [Semian's `semian/net_http`](https://github.com/Shopify/semian)
+  patch still instruments the underlying `Net::HTTP`, so a circuit breaker
+  wrapped around these calls keeps working - but `Net::CircuitOpenError`
+  (a `Net::ProtocolError` subclass) is now rescued and re-raised wrapped as
+  `Faraday::ConnectionFailed` by Faraday's adapter. Code that used to
+  `rescue Net::CircuitOpenError` directly should instead do:
+  ```ruby
+  rescue Faraday::ConnectionFailed => e
+    raise unless e.wrapped_exception.is_a?(Net::CircuitOpenError)
+    # circuit is open
+  end
+  ```
+- **Unknown request options now raise.** Passing an unsupported key in
+  `request_opts` (e.g. `:method`) raises `ArgumentError` instead of being
+  silently ignored or misused.
+- **Ruby >= 3.2 required** (was >= 2.6).
+- `rest-client` is no longer a dependency.
 
 ## Contributing
 

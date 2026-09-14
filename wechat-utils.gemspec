@@ -13,7 +13,11 @@ Gem::Specification.new do |spec|
   spec.description   = %q{wechat api for remote calls}
   spec.homepage      = 'https://github.com/warmwind/wechat-utils'
   spec.license       = 'MIT'
-  spec.required_ruby_version = '>= 3.3.1'
+  # connection_pool's own dependency floor (>= 2.2.4, see below) would let
+  # a resolution land on connection_pool 3.x, whose anonymous ** kwarg
+  # forwarding needs Ruby >= 3.2; require that floor directly instead of
+  # only enforcing it transitively. CI still runs 3.3.1 (see .travis.yml).
+  spec.required_ruby_version = '>= 3.2'
 
   spec.files         = `git ls-files -z`.split("\x0").reject { |f| f.match(%r{^(test|spec|features)/}) }
   spec.bindir        = 'bin'
@@ -26,6 +30,13 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'mocha', ['>= 2.1']
   spec.add_development_dependency 'webmock'
 
+  # Pinned to the faraday-net_http_persistent 1.x line, which only
+  # supports faraday ~> 1.x: 1.2 doesn't expose Net::HTTP::Persistent's
+  # idle_timeout as a connection option (IdleTimeoutAdapter works around
+  # that), while 2.x does but requires faraday ~> 2.5. Moving to Faraday
+  # 2 means re-deriving IdleTimeoutAdapter against that version's adapter
+  # API, not just relaxing this constraint - left as a follow-up rather
+  # than done speculatively here.
   spec.add_runtime_dependency 'faraday', ['~> 1.10']
   spec.add_runtime_dependency 'faraday-follow_redirects', ['~> 0.3']
   spec.add_runtime_dependency 'faraday-net_http_persistent', ['~> 1.2']
@@ -37,11 +48,4 @@ Gem::Specification.new do |spec|
   # initial request could have a child reuse the parent's inherited
   # socket.
   spec.add_runtime_dependency 'connection_pool', ['>= 2.5.5']
-  # Faraday::Request::BasicAuthentication (used for URL-embedded
-  # credentials) requires 'base64'. It's a default gem bundled with the
-  # interpreter through Ruby 3.3 but not from 3.4 on, and neither this
-  # gem nor faraday 1.10 declares it, so an authenticated URL could raise
-  # LoadError on 3.4+ unless the app happens to have base64 in its own
-  # bundle already.
-  spec.add_runtime_dependency 'base64'
 end

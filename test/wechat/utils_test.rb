@@ -13,7 +13,7 @@ class Wechat::UtilsTest < Minitest::Test
   end
 
   def test_that_it_has_a_version_number
-    assert_equal '0.3.0', ::Wechat::Utils::VERSION
+    assert_equal '0.3.1', ::Wechat::Utils::VERSION
   end
 
   def test_it_should_return_snsapi_base_oauth_url_for_code
@@ -73,12 +73,6 @@ class Wechat::UtilsTest < Minitest::Test
     Wechat::Utils.fetch_user_info 't', 'o', request_opts: {timeout: nil}
   end
 
-  def test_a_negative_one_timeout_should_disable_the_timeouts_like_rest_client_did
-    expected_url = 'https://api.weixin.qq.com/cgi-bin/user/info?access_token=t&openid=o&lang=zh_CN'
-    stub_request(:get, expected_url).to_return(body: '{}')
-    Wechat::Utils.fetch_user_info 't', 'o', request_opts: {timeout: -1, open_timeout: -1, read_timeout: -1}
-  end
-
   def test_it_should_map_specific_timeouts
     expected_url = 'https://api.weixin.qq.com/cgi-bin/user/info?access_token=t&openid=o&lang=zh_CN'
     stub_request(:get, expected_url).to_return(body: '{}')
@@ -89,11 +83,6 @@ class Wechat::UtilsTest < Minitest::Test
     expected_url = 'https://api.weixin.qq.com/cgi-bin/user/info?access_token=t&openid=o&lang=zh_CN'
     stub_request(:get, expected_url).with(headers: {'X-Trace' => 'abc'}).to_return(body: '{}')
     Wechat::Utils.fetch_user_info 't', 'o', request_opts: {'headers' => {'X-Trace' => 'abc'}}
-  end
-
-  def test_it_should_stringify_non_string_header_values_like_rest_client_did
-    stub_request(:get, 'https://api.weixin.qq.com/x').with(headers: {'X-Count' => '5', 'Accept' => 'json'}).to_return(body: '{}')
-    Wechat::Utils.get_request('https://api.weixin.qq.com/x', headers: {'X-Count' => 5, 'Accept' => :json})
   end
 
   def test_it_should_accept_a_proxy_option_without_raising
@@ -107,23 +96,13 @@ class Wechat::UtilsTest < Minitest::Test
     assert_match(/unsupported request options: :method/, error.message)
   end
 
-  def test_it_should_send_url_embedded_credentials_as_basic_auth
-    stub_request(:get, 'https://api.weixin.qq.com/x').with(basic_auth: %w[a-user a-pass]).to_return(body: '{}')
-    Wechat::Utils.get_request('https://a-user:a-pass@api.weixin.qq.com/x')
-  end
-
-  def test_it_should_let_an_explicit_header_override_url_embedded_credentials
-    stub_request(:get, 'https://api.weixin.qq.com/x').with(headers: {'Authorization' => 'Bearer t'}).to_return(body: '{}')
-    Wechat::Utils.get_request('https://a-user:a-pass@api.weixin.qq.com/x', headers: {'Authorization' => 'Bearer t'})
-  end
-
   def test_it_should_raise_on_an_unfollowed_redirect_status
     start_server { |_req| [304, ''] }
     assert_raises(Faraday::ClientError) { Wechat::Utils.get_request(@server.url('/x')) }
   end
 
-  def test_it_should_raise_on_a_2xx_status_outside_200_to_207
-    start_server { |_req| [208, '{}'] }
+  def test_it_should_raise_on_any_status_other_than_200
+    start_server { |_req| [201, '{}'] }
     assert_raises(Faraday::ClientError) { Wechat::Utils.get_request(@server.url('/x')) }
   end
 
@@ -231,6 +210,23 @@ class Wechat::UtilsTest < Minitest::Test
       assert_raises(Faraday::TimeoutError) { Wechat::Utils.get_request(@server.url('/slow'), timeout: 0.5) }
     end
     assert_operator elapsed, :<, 3
+    # IdleTimeoutAdapter restores Net::HTTP's built-in max_retries = 1, so a
+    # read-timed-out GET (idempotent) is transparently retried once on a
+    # fresh connection before raising: two requests reach the server and
+    # the call takes ~2x the timeout, not just one timeout's worth.
+    assert_operator elapsed, :>, 0.9
+    assert_equal 2, @server.requests.size
+  end
+
+  def test_it_should_not_retry_a_timed_out_post
+    start_server(tls: true) { |_req| sleep 5; [200, '{}'] }
+    elapsed = Benchmark.realtime do
+      assert_raises(Faraday::TimeoutError) { Wechat::Utils.post_request(@server.url('/slow'), {}, timeout: 0.5) }
+    end
+    # POST is not in Net::HTTP's idempotent method list, so unlike GET it
+    # is never silently retried after a read timeout.
+    assert_operator elapsed, :<, 0.9
+    assert_equal 1, @server.requests.size
   end
 
   def test_each_thread_should_get_its_own_connection_and_correct_responses
@@ -331,11 +327,6 @@ class Wechat::UtilsTest < Minitest::Test
     default_connection = Wechat::Utils.send(:connection, ssl, nil)
     proxied_connection = Wechat::Utils.send(:connection, ssl, 'http://proxy.example:3128')
     refute_same default_connection, proxied_connection
-  end
-
-  def test_it_should_normalize_a_url_missing_a_scheme
-    stub_request(:get, 'http://api.weixin.qq.com/x').to_return(body: '{}')
-    assert_equal({}, Wechat::Utils.get_request('api.weixin.qq.com/x'))
   end
 
   def test_it_should_raise_on_http_error_status

@@ -1,6 +1,5 @@
 require 'json'
 require 'cgi'
-require 'uri'
 require 'digest/sha1'
 require 'securerandom'
 require 'faraday'
@@ -161,8 +160,8 @@ module Wechat
       # test) would leak sockets until an eventual GC.
       def shutdown_persistent_manager(conn)
         adapter = conn.app
-        adapter = adapter.instance_variable_get(:@app) until adapter.is_a?(Faraday::Adapter)
-        adapter.instance_variable_get(:@cached_connection)&.shutdown
+        adapter = adapter.instance_variable_get(:@app) while adapter && !adapter.is_a?(Faraday::Adapter)
+        adapter&.instance_variable_get(:@cached_connection)&.shutdown
       end
 
       def perform_request method, url, payload, extra_opts
@@ -170,7 +169,6 @@ module Wechat
         unknown = opts.keys - REQUEST_OPTION_KEYS - SSL_OPTION_KEYS
         raise ArgumentError, "unsupported request options: #{unknown.map(&:inspect).join(', ')}" unless unknown.empty?
 
-        url, user, password = extract_url_credentials(normalize_url(url))
         response = connection(ssl_options(opts), opts[:proxy]).public_send(method, url) do |req|
           # A sentinel, not payload's truthiness: false/nil are valid JSON
           # bodies a caller may deliberately pass to post_request.
@@ -178,42 +176,30 @@ module Wechat
             req.headers['Content-Type'] = 'application/json'
             req.body = payload.is_a?(String) ? payload : payload.to_json
           end
-          req.headers[Faraday::Request::Authorization::KEY] = Faraday::Request::BasicAuthentication.header(user, password) if user
           # Resolve the phase-specific timeouts here (explicit value, else
           # :timeout) so an explicit nil disables that timeout instead of
           # falling back to Faraday's `read_timeout || timeout`.
-          #
-          # rest-client also accepted -1 as a deprecated alias for nil on
-          # open_timeout/read_timeout; passed straight through, Net::HTTP
-          # eventually uses it as a negative IO wait interval and raises
-          # ArgumentError instead of disabling the timeout.
           %i[open_timeout read_timeout write_timeout].each do |key|
             value = opts.key?(key) ? opts[key] : opts[:timeout]
-            req.options.send("#{key}=", (value.nil? || value == -1) ? NO_TIMEOUT : value)
+            req.options.send("#{key}=", value.nil? ? NO_TIMEOUT : value)
           end
           # []= normalises a URL string into Faraday::ProxyOptions; nil/false
           # overrides the proxy Faraday would otherwise pick up from the
           # http_proxy / https_proxy environment variables
           req.options[:proxy] = opts[:proxy] if opts.key?(:proxy)
-          # after Content-Type/Authorization, so an explicit header can
-          # still override either. rest-client stringified header values
-          # (a Symbol, e.g. :json, or a number was a supported shorthand);
-          # Net::HTTP calls #strip on the raw value, so passing one
-          # unconverted raises NoMethodError instead. Known gap: unlike
-          # rest-client (via the mime-types gem), a MIME shorthand like
-          # :json becomes the literal string "json", not
-          # "application/json" - accepted deliberately, since this gem's
-          # fixed WeChat endpoints don't do content negotiation and the
-          # full expansion isn't worth a new runtime dependency for it.
-          req.headers.update(opts[:headers].transform_values(&:to_s)) if opts[:headers].is_a?(Hash)
+          # after Content-Type, so an explicit header can still override
+          # it. Values must already be strings - Net::HTTP calls #strip on
+          # them - since none of this gem's fixed WeChat endpoints need a
+          # Symbol/number shorthand.
+          req.headers.update(opts[:headers]) if opts[:headers].is_a?(Hash)
         end
-        # rest-client only ever treated 200..207 as success, raising for
-        # anything else it didn't itself redirect on - an obscure 2xx like
-        # 208/226, or a 3xx faraday-follow_redirects doesn't follow (300,
-        # 304, 305, 306; it follows 301/302/303/307/308). Faraday's
-        # raise_error middleware only raises on 4xx/5xx, so those would
-        # otherwise reach JSON.parse as if successful; match rest-client.
-        unless (200..207).cover?(response.status)
+        # WeChat's JSON API always responds 200, even for a logical
+        # (errcode-carrying) failure; Faraday's raise_error middleware
+        # already raises on 4xx/5xx, and StrictFollowRedirects handles the
+        # redirect statuses it will follow, so anything else reaching here
+        # (an unfollowed redirect, or any other unexpected status) is an
+        # error.
+        unless response.status == 200
           raise Faraday::ClientError, status: response.status, headers: response.headers, body: response.body
         end
         JSON.parse response.body
@@ -253,28 +239,6 @@ module Wechat
           f.response :raise_error
           f.adapter IdleTimeoutAdapter
         end
-      end
-
-      # rest-client normalized a schemeless URL (e.g. "example.com/x") to
-      # "http://example.com/x"; Faraday would otherwise treat it as a
-      # relative path with no host.
-      def normalize_url url
-        url =~ %r{\A[a-z][a-z0-9+.-]*://}i ? url : "http://#{url}"
-      end
-
-      # rest-client extracted userinfo (https://user:pass@host/x) from the
-      # URL and sent it as HTTP Basic auth. Faraday only does that for a
-      # connection's url_prefix, never for a per-request URL - which is
-      # all we ever pass it - so without this, a credentialed URL would
-      # silently make an unauthenticated request instead.
-      def extract_url_credentials url
-        uri = URI.parse(url)
-        return [url, nil, nil] unless uri.user || uri.password
-
-        user = uri.user && CGI.unescape(uri.user)
-        password = uri.password && CGI.unescape(uri.password)
-        uri.user = uri.password = nil
-        [uri.to_s, user, password]
       end
 
       def ssl_options opts

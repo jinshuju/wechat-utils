@@ -54,11 +54,24 @@ Wechat::Utils.post_request 'https://api.weixin.qq.com/cgi-bin/...', {action_name
 #   :timeout, :open_timeout, :read_timeout, :write_timeout - seconds; nil disables the timeout
 #   :headers      - Hash of extra request headers (string values)
 #   :proxy        - proxy URL; false disables proxies, including the http_proxy / https_proxy env vars
-#   :verify_ssl   - false (default) / true / OpenSSL::SSL::VERIFY_*
+#   :verify_ssl   - true (default) / false / OpenSSL::SSL::VERIFY_*
 #   :ssl_version, :ssl_min_version, :ssl_max_version - OpenSSL names
 #   :ssl_ca_file
+#   :raw          - return the response body unparsed (binary endpoints such as getwxacodeunlimit)
 # Any other key raises ArgumentError.
+
+# subscribe - called once per get_request / post_request with a Hash of
+# method, url, status, errcode, errmsg, error, duration_ms. url still carries
+# its query string (access_token, secret), so filter it before logging.
+Wechat::Utils.subscribe(:my_app) { |event| ... }
 ```
+
+## Changes in 0.3.2
+
+- **Certificates are verified by default.** `verify_ssl` now defaults to
+  `true`; pass `verify_ssl: false` to get the previous behavior.
+- `raw: true` returns the response body unparsed.
+- `subscribe` to observe every request.
 
 ## Breaking changes from 0.2.x
 

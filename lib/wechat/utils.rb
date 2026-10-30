@@ -6,16 +6,18 @@ require 'faraday'
 require 'faraday/follow_redirects'
 require 'faraday/net_http_persistent'
 require 'wechat/utils/version'
+require 'wechat/utils/instrumentable'
 require 'wechat/utils/idle_timeout_adapter'
 require 'wechat/utils/strict_follow_redirects'
 
 
 module Wechat
   module Utils
-    # Defaults applied to every request. They mirror the behaviour of the
-    # previous rest-client based implementation.
+    extend Instrumentable
+
+    # Defaults applied to every request.
     DEFAULT_REQUEST_OPTS = {
-      verify_ssl: false,
+      verify_ssl: true,
       timeout: 30
     }.freeze
     # rest-client followed up to 10 redirects by default; match it.
@@ -40,6 +42,8 @@ module Wechat
     REQUEST_OPTION_KEYS = %i[timeout open_timeout read_timeout write_timeout headers proxy].freeze
     # Options that decide which underlying persistent connection is used.
     SSL_OPTION_KEYS = %i[verify_ssl ssl_version ssl_min_version ssl_max_version ssl_ca_file].freeze
+    # Options that only affect what the call returns.
+    RESPONSE_OPTION_KEYS = %i[raw].freeze
 
     # Faraday normally decodes the query string into a params hash and
     # re-encodes it (sorted) before sending. WeChat URLs are built by hand in
@@ -112,9 +116,11 @@ module Wechat
       #   :headers        - Hash of extra request headers
       #   :proxy          - proxy URL; false disables proxies, including the
       #                     http_proxy / https_proxy environment variables
-      #   :verify_ssl     - false (default) / true / OpenSSL::SSL::VERIFY_*
+      #   :verify_ssl     - true (default) / false / OpenSSL::SSL::VERIFY_*
       #   :ssl_version, :ssl_min_version, :ssl_max_version - OpenSSL names
       #   :ssl_ca_file
+      #   :raw            - return the response body unparsed, for endpoints
+      #                     that answer with binary data (e.g. getwxacodeunlimit)
       def post_request url, payload, extra_opts = {}
         perform_request :post, url, payload, extra_opts
       end
@@ -166,9 +172,11 @@ module Wechat
 
       def perform_request method, url, payload, extra_opts
         opts = DEFAULT_REQUEST_OPTS.merge(symbolize_keys(extra_opts || {}))
-        unknown = opts.keys - REQUEST_OPTION_KEYS - SSL_OPTION_KEYS
+        unknown = opts.keys - REQUEST_OPTION_KEYS - SSL_OPTION_KEYS - RESPONSE_OPTION_KEYS
         raise ArgumentError, "unsupported request options: #{unknown.map(&:inspect).join(', ')}" unless unknown.empty?
 
+        event = { method: method, url: url }
+        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         response = connection(ssl_options(opts), opts[:proxy]).public_send(method, url) do |req|
           # A sentinel, not payload's truthiness: false/nil are valid JSON
           # bodies a caller may deliberately pass to post_request.
@@ -199,10 +207,26 @@ module Wechat
         # redirect statuses it will follow, so anything else reaching here
         # (an unfollowed redirect, or any other unexpected status) is an
         # error.
+        event[:status] = response.status
         unless response.status == 200
           raise Faraday::ClientError, status: response.status, headers: response.headers, body: response.body
         end
-        JSON.parse response.body
+        result = opts[:raw] ? response.body : JSON.parse(response.body)
+        error = opts[:raw] ? json_error_body(response.body) : result
+        event.update(errcode: error['errcode'], errmsg: error['errmsg']) if error.is_a?(Hash)
+        result
+      rescue StandardError => e
+        event[:error] = e if event
+        raise
+      ensure
+        notify event.merge(duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round) if event
+      end
+
+      # A binary endpoint still reports failures as a JSON object.
+      def json_error_body body
+        JSON.parse(body) if body.start_with?('{')
+      rescue JSON::ParserError
+        nil
       end
 
       # Thread-local: faraday-net_http_persistent caches a single

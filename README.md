@@ -57,8 +57,14 @@ Wechat::Utils.post_request 'https://api.weixin.qq.com/cgi-bin/...', {action_name
 #   :verify_ssl   - false (default) / true / OpenSSL::SSL::VERIFY_*
 #   :ssl_version, :ssl_min_version, :ssl_max_version - OpenSSL names
 #   :ssl_ca_file
+#   :raw          - return the response body unparsed (binary endpoints such as getwxacodeunlimit)
 # Any other key raises ArgumentError.
+
 ```
+
+## Changes in 0.3.2
+
+- `raw: true` returns the response body unparsed.
 
 ## Breaking changes from 0.2.x
 

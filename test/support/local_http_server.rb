@@ -1,6 +1,7 @@
 require 'socket'
 require 'openssl'
 require 'json'
+require 'tempfile'
 
 # Minimal HTTP/1.1 keep-alive server used to observe how many TCP connections a
 # client really opens. Every accepted connection is served by its own thread
@@ -11,7 +12,9 @@ class LocalHttpServer
 
   attr_reader :port, :requests
 
-  # +tls+:                  wrap the listener in TLS with a self-signed cert.
+  # +tls+:                  wrap the listener in TLS with a self-signed cert;
+  #                         a host name instead serves a cert for that name
+  #                         issued by the test CA (see .ca_file).
   # +drop_after_response+:  close the connection right after every response
   #                         without announcing it (simulates a server closing
   #                         idle keep-alive sockets under the client's feet).
@@ -26,6 +29,38 @@ class LocalHttpServer
     @mutex = Mutex.new
     @client_threads = []
     @clients = []
+  end
+
+  def self.ca_file
+    @ca_file ||= Tempfile.new(['wechat_utils_test_ca', '.pem']).tap do |file|
+      file.write(ca.last.to_pem)
+      file.flush
+    end
+    @ca_file.path
+  end
+
+  def self.ca
+    @ca ||= begin
+      key = OpenSSL::PKey::RSA.new(2048)
+      cert = unsigned_cert(key, '/CN=wechat-utils test CA')
+      extensions = OpenSSL::X509::ExtensionFactory.new(cert, cert)
+      cert.add_extension(extensions.create_extension('basicConstraints', 'CA:TRUE', true))
+      cert.add_extension(extensions.create_extension('keyUsage', 'keyCertSign, cRLSign', true))
+      cert.sign(key, OpenSSL::Digest.new('SHA256'))
+      [key, cert]
+    end
+  end
+
+  def self.unsigned_cert(key, subject)
+    cert = OpenSSL::X509::Certificate.new
+    cert.version = 2
+    cert.serial = rand(1..2**32)
+    cert.subject = OpenSSL::X509::Name.parse(subject)
+    cert.issuer = cert.subject
+    cert.public_key = key.public_key
+    cert.not_before = Time.now - 60
+    cert.not_after = Time.now + 3600
+    cert
   end
 
   def accepted_connections
@@ -112,6 +147,8 @@ class LocalHttpServer
   end
 
   def ssl_context
+    return ca_issued_ssl_context(@tls) if @tls.is_a?(String)
+
     key = OpenSSL::PKey::RSA.new(2048)
     cert = OpenSSL::X509::Certificate.new
     cert.version = 2
@@ -122,6 +159,22 @@ class LocalHttpServer
     cert.not_before = Time.now - 60
     cert.not_after = Time.now + 3600
     cert.sign(key, OpenSSL::Digest.new('SHA256'))
+
+    ctx = OpenSSL::SSL::SSLContext.new
+    ctx.cert = cert
+    ctx.key = key
+    ctx.min_version = OpenSSL::SSL::TLS1_2_VERSION
+    ctx
+  end
+
+  def ca_issued_ssl_context(host)
+    ca_key, ca_cert = self.class.ca
+    key = OpenSSL::PKey::RSA.new(2048)
+    cert = self.class.unsigned_cert(key, "/CN=#{host}")
+    cert.issuer = ca_cert.subject
+    san = host.match?(/\A[\d.]+\z/) ? "IP:#{host}" : "DNS:#{host}"
+    cert.add_extension(OpenSSL::X509::ExtensionFactory.new(ca_cert, cert).create_extension('subjectAltName', san))
+    cert.sign(ca_key, OpenSSL::Digest.new('SHA256'))
 
     ctx = OpenSSL::SSL::SSLContext.new
     ctx.cert = cert

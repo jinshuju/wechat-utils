@@ -13,7 +13,7 @@ class Wechat::UtilsTest < Minitest::Test
   end
 
   def test_that_it_has_a_version_number
-    assert_equal '0.3.1', ::Wechat::Utils::VERSION
+    assert_equal '0.3.2', ::Wechat::Utils::VERSION
   end
 
   def test_it_should_return_snsapi_base_oauth_url_for_code
@@ -141,6 +141,13 @@ class Wechat::UtilsTest < Minitest::Test
     assert_match(/unsupported request options: :method/, error.message)
   end
 
+  def test_raw_should_return_the_body_unparsed
+    image = "\xFF\xD8\xFF\xE0binary".b
+    stub_request(:post, 'https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=t')
+      .to_return(body: image, headers: {'Content-Type' => 'image/jpeg'})
+    assert_equal image, Wechat::Utils.post_request('https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=t', {scene: 'a'}, raw: true)
+  end
+
   def test_post_request_should_reuse_the_same_connection_as_get_request
     start_server
     Wechat::Utils.get_request(@server.url('/g'))
@@ -202,6 +209,19 @@ class Wechat::UtilsTest < Minitest::Test
     assert_raises(Faraday::SSLError) do
       Wechat::Utils.get_request(@server.url('/cgi-bin/token'), verify_ssl: true)
     end
+  end
+
+  def test_it_should_accept_a_trusted_certificate_issued_for_the_host
+    start_server(tls: '127.0.0.1')
+    assert_equal '/cgi-bin/token', Wechat::Utils.get_request(@server.url('/cgi-bin/token'), verify_ssl: true, ssl_ca_file: LocalHttpServer.ca_file)['path']
+  end
+
+  def test_it_should_reject_a_trusted_certificate_issued_for_another_host
+    start_server(tls: 'wrong.host.example')
+    error = assert_raises(Faraday::SSLError) do
+      Wechat::Utils.get_request(@server.url('/cgi-bin/token'), verify_ssl: true, ssl_ca_file: LocalHttpServer.ca_file)
+    end
+    assert_match(/hostname/, error.message)
   end
 
   def test_it_should_enforce_read_timeout_over_https

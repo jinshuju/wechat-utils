@@ -40,6 +40,8 @@ module Wechat
     REQUEST_OPTION_KEYS = %i[timeout open_timeout read_timeout write_timeout headers proxy].freeze
     # Options that decide which underlying persistent connection is used.
     SSL_OPTION_KEYS = %i[verify_ssl ssl_version ssl_min_version ssl_max_version ssl_ca_file].freeze
+    # Options that only affect what the call returns.
+    RESPONSE_OPTION_KEYS = %i[raw].freeze
 
     # Faraday normally decodes the query string into a params hash and
     # re-encodes it (sorted) before sending. WeChat URLs are built by hand in
@@ -115,6 +117,8 @@ module Wechat
       #   :verify_ssl     - false (default) / true / OpenSSL::SSL::VERIFY_*
       #   :ssl_version, :ssl_min_version, :ssl_max_version - OpenSSL names
       #   :ssl_ca_file
+      #   :raw            - return the response body unparsed, for endpoints
+      #                     that answer with binary data (e.g. getwxacodeunlimit)
       def post_request url, payload, extra_opts = {}
         perform_request :post, url, payload, extra_opts
       end
@@ -166,7 +170,7 @@ module Wechat
 
       def perform_request method, url, payload, extra_opts
         opts = DEFAULT_REQUEST_OPTS.merge(symbolize_keys(extra_opts || {}))
-        unknown = opts.keys - REQUEST_OPTION_KEYS - SSL_OPTION_KEYS
+        unknown = opts.keys - REQUEST_OPTION_KEYS - SSL_OPTION_KEYS - RESPONSE_OPTION_KEYS
         raise ArgumentError, "unsupported request options: #{unknown.map(&:inspect).join(', ')}" unless unknown.empty?
 
         response = connection(ssl_options(opts), opts[:proxy]).public_send(method, url) do |req|
@@ -202,7 +206,7 @@ module Wechat
         unless response.status == 200
           raise Faraday::ClientError, status: response.status, headers: response.headers, body: response.body
         end
-        JSON.parse response.body
+        opts[:raw] ? response.body : JSON.parse(response.body)
       end
 
       # Thread-local: faraday-net_http_persistent caches a single

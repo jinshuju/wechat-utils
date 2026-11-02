@@ -12,9 +12,10 @@ require 'wechat/utils/strict_follow_redirects'
 
 module Wechat
   module Utils
-    # Defaults applied to every request.
+    # Defaults applied to every request. They mirror the behaviour of the
+    # previous rest-client based implementation.
     DEFAULT_REQUEST_OPTS = {
-      verify_ssl: true,
+      verify_ssl: false,
       timeout: 30
     }.freeze
     # rest-client followed up to 10 redirects by default; match it.
@@ -113,7 +114,7 @@ module Wechat
       #   :headers        - Hash of extra request headers
       #   :proxy          - proxy URL; false disables proxies, including the
       #                     http_proxy / https_proxy environment variables
-      #   :verify_ssl     - true (default) / false / OpenSSL::SSL::VERIFY_*
+      #   :verify_ssl     - false (default) / true / OpenSSL::SSL::VERIFY_*
       #   :ssl_version, :ssl_min_version, :ssl_max_version - OpenSSL names
       #   :ssl_ca_file
       #   :raw            - return the response body unparsed, for endpoints

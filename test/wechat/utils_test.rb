@@ -179,7 +179,7 @@ class Wechat::UtilsTest < Minitest::Test
   def test_it_should_raise_the_default_idle_timeout
     start_server
     Wechat::Utils.get_request(@server.url('/x'))
-    adapter = adapter_for(Wechat::Utils.send(:ssl_options, Wechat::Utils::DEFAULT_REQUEST_OPTS), nil)
+    adapter = adapter_for(Wechat::Utils.send(:ssl_options, {}), nil)
     persistent = adapter.instance_variable_get(:@cached_connection)
     assert_equal Wechat::Utils::IdleTimeoutAdapter::IDLE_TIMEOUT, persistent.idle_timeout
     refute_equal 5, persistent.idle_timeout
@@ -198,28 +198,28 @@ class Wechat::UtilsTest < Minitest::Test
   def test_it_should_reuse_one_tls_session_for_sequential_https_requests
     start_server(tls: true)
     3.times do |i|
-      assert_equal "appid=#{i}", Wechat::Utils.get_request(@server.url("/cgi-bin/token?appid=#{i}"), verify_ssl: false)['query']
+      assert_equal "appid=#{i}", Wechat::Utils.get_request(@server.url("/cgi-bin/token?appid=#{i}"))['query']
     end
     assert_equal 3, @server.requests.size
     assert_equal 1, @server.accepted_connections
   end
 
-  def test_it_should_verify_certificates_by_default
+  def test_it_should_verify_certificates_when_asked_to
     start_server(tls: true)
     assert_raises(Faraday::SSLError) do
-      Wechat::Utils.get_request(@server.url('/cgi-bin/token'))
+      Wechat::Utils.get_request(@server.url('/cgi-bin/token'), verify_ssl: true)
     end
   end
 
   def test_it_should_accept_a_trusted_certificate_issued_for_the_host
     start_server(tls: '127.0.0.1')
-    assert_equal '/cgi-bin/token', Wechat::Utils.get_request(@server.url('/cgi-bin/token'), ssl_ca_file: LocalHttpServer.ca_file)['path']
+    assert_equal '/cgi-bin/token', Wechat::Utils.get_request(@server.url('/cgi-bin/token'), verify_ssl: true, ssl_ca_file: LocalHttpServer.ca_file)['path']
   end
 
   def test_it_should_reject_a_trusted_certificate_issued_for_another_host
     start_server(tls: 'wrong.host.example')
     error = assert_raises(Faraday::SSLError) do
-      Wechat::Utils.get_request(@server.url('/cgi-bin/token'), ssl_ca_file: LocalHttpServer.ca_file)
+      Wechat::Utils.get_request(@server.url('/cgi-bin/token'), verify_ssl: true, ssl_ca_file: LocalHttpServer.ca_file)
     end
     assert_match(/hostname/, error.message)
   end
@@ -227,7 +227,7 @@ class Wechat::UtilsTest < Minitest::Test
   def test_it_should_enforce_read_timeout_over_https
     start_server(tls: true) { |_req| sleep 5; [200, '{}'] }
     elapsed = Benchmark.realtime do
-      assert_raises(Faraday::TimeoutError) { Wechat::Utils.get_request(@server.url('/slow'), timeout: 0.5, verify_ssl: false) }
+      assert_raises(Faraday::TimeoutError) { Wechat::Utils.get_request(@server.url('/slow'), timeout: 0.5) }
     end
     assert_operator elapsed, :<, 3
     # IdleTimeoutAdapter restores Net::HTTP's built-in max_retries = 1, so a
@@ -241,7 +241,7 @@ class Wechat::UtilsTest < Minitest::Test
   def test_it_should_not_retry_a_timed_out_post
     start_server(tls: true) { |_req| sleep 5; [200, '{}'] }
     elapsed = Benchmark.realtime do
-      assert_raises(Faraday::TimeoutError) { Wechat::Utils.post_request(@server.url('/slow'), {}, timeout: 0.5, verify_ssl: false) }
+      assert_raises(Faraday::TimeoutError) { Wechat::Utils.post_request(@server.url('/slow'), {}, timeout: 0.5) }
     end
     # POST is not in Net::HTTP's idempotent method list, so unlike GET it
     # is never silently retried after a read timeout.
@@ -312,9 +312,9 @@ class Wechat::UtilsTest < Minitest::Test
 
   def test_it_should_not_leak_a_disabled_timeout_into_a_later_reused_connection
     start_server(tls: true) { |_req| sleep 1; [200, '{}'] }
-    assert_raises(Faraday::TimeoutError) { Wechat::Utils.get_request(@server.url('/slow'), timeout: 0.2, verify_ssl: false) }
+    assert_raises(Faraday::TimeoutError) { Wechat::Utils.get_request(@server.url('/slow'), timeout: 0.2) }
     # Same cached connection as above; a stale 0.2s timeout would make this raise too.
-    Wechat::Utils.get_request(@server.url('/slow'), timeout: nil, verify_ssl: false)
+    Wechat::Utils.get_request(@server.url('/slow'), timeout: nil)
   end
 
   def test_concurrent_requests_with_different_timeouts_should_not_clobber_each_other
@@ -357,7 +357,7 @@ class Wechat::UtilsTest < Minitest::Test
   def test_reset_connections_should_allow_a_fresh_connection_to_be_built
     start_server
     Wechat::Utils.get_request(@server.url('/x?n=1'))
-    ssl = Wechat::Utils.send(:ssl_options, Wechat::Utils::DEFAULT_REQUEST_OPTS)
+    ssl = Wechat::Utils.send(:ssl_options, {})
     before = Wechat::Utils.send(:connection, ssl, nil)
     Wechat::Utils.reset_connections!
     after = Wechat::Utils.send(:connection, ssl, nil)

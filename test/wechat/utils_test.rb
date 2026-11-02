@@ -255,6 +255,19 @@ class Wechat::UtilsTest < Minitest::Test
     end
   end
 
+  def test_it_should_accept_a_trusted_certificate_issued_for_the_host
+    start_server(tls: '127.0.0.1')
+    assert_equal '/cgi-bin/token', Wechat::Utils.get_request(@server.url('/cgi-bin/token'), ssl_ca_file: LocalHttpServer.ca_file)['path']
+  end
+
+  def test_it_should_reject_a_trusted_certificate_issued_for_another_host
+    start_server(tls: 'wrong.host.example')
+    error = assert_raises(Faraday::SSLError) do
+      Wechat::Utils.get_request(@server.url('/cgi-bin/token'), ssl_ca_file: LocalHttpServer.ca_file)
+    end
+    assert_match(/hostname/, error.message)
+  end
+
   def test_it_should_enforce_read_timeout_over_https
     start_server(tls: true) { |_req| sleep 5; [200, '{}'] }
     elapsed = Benchmark.realtime do

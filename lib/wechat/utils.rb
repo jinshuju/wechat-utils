@@ -6,15 +6,12 @@ require 'faraday'
 require 'faraday/follow_redirects'
 require 'faraday/net_http_persistent'
 require 'wechat/utils/version'
-require 'wechat/utils/instrumentable'
 require 'wechat/utils/idle_timeout_adapter'
 require 'wechat/utils/strict_follow_redirects'
 
 
 module Wechat
   module Utils
-    extend Instrumentable
-
     # Defaults applied to every request.
     DEFAULT_REQUEST_OPTS = {
       verify_ssl: true,
@@ -175,8 +172,6 @@ module Wechat
         unknown = opts.keys - REQUEST_OPTION_KEYS - SSL_OPTION_KEYS - RESPONSE_OPTION_KEYS
         raise ArgumentError, "unsupported request options: #{unknown.map(&:inspect).join(', ')}" unless unknown.empty?
 
-        event = { method: method, url: url }
-        started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
         response = connection(ssl_options(opts), opts[:proxy]).public_send(method, url) do |req|
           # A sentinel, not payload's truthiness: false/nil are valid JSON
           # bodies a caller may deliberately pass to post_request.
@@ -207,26 +202,10 @@ module Wechat
         # redirect statuses it will follow, so anything else reaching here
         # (an unfollowed redirect, or any other unexpected status) is an
         # error.
-        event[:status] = response.status
         unless response.status == 200
           raise Faraday::ClientError, status: response.status, headers: response.headers, body: response.body
         end
-        result = opts[:raw] ? response.body : JSON.parse(response.body)
-        error = opts[:raw] ? json_error_body(response.body) : result
-        event.update(errcode: error['errcode'], errmsg: error['errmsg']) if error.is_a?(Hash)
-        result
-      rescue StandardError => e
-        event[:error] = e if event
-        raise
-      ensure
-        notify event.merge(duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round) if event
-      end
-
-      # A binary endpoint still reports failures as a JSON object.
-      def json_error_body body
-        JSON.parse(body) if body.start_with?('{')
-      rescue JSON::ParserError
-        nil
+        opts[:raw] ? response.body : JSON.parse(response.body)
       end
 
       # Thread-local: faraday-net_http_persistent caches a single

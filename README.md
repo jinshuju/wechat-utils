@@ -60,10 +60,6 @@ Wechat::Utils.post_request 'https://api.weixin.qq.com/cgi-bin/...', {action_name
 #   :raw          - return the response body unparsed (binary endpoints such as getwxacodeunlimit)
 # Any other key raises ArgumentError.
 
-# subscribe - called once per get_request / post_request with a Hash of
-# method, url, status, errcode, errmsg, error, duration_ms. url still carries
-# its query string (access_token, secret), so filter it before logging.
-Wechat::Utils.subscribe(:my_app) { |event| ... }
 ```
 
 ## Changes in 0.3.2
@@ -71,7 +67,6 @@ Wechat::Utils.subscribe(:my_app) { |event| ... }
 - **Certificates are verified by default.** `verify_ssl` now defaults to
   `true`; pass `verify_ssl: false` to get the previous behavior.
 - `raw: true` returns the response body unparsed.
-- `subscribe` to observe every request.
 
 ## Breaking changes from 0.2.x
 

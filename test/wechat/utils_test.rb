@@ -9,7 +9,6 @@ class Wechat::UtilsTest < Minitest::Test
 
   def teardown
     Wechat::Utils.reset_connections!
-    Wechat::Utils.send(:subscribers).delete(@subscription) if @subscription
     @server.stop if @server
   end
 
@@ -147,49 +146,6 @@ class Wechat::UtilsTest < Minitest::Test
     stub_request(:post, 'https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=t')
       .to_return(body: image, headers: {'Content-Type' => 'image/jpeg'})
     assert_equal image, Wechat::Utils.post_request('https://api.weixin.qq.com/wxa/getwxacodeunlimit?access_token=t', {scene: 'a'}, raw: true)
-  end
-
-  def test_it_should_notify_subscribers_of_each_request
-    events = subscribe_events
-    stub_request(:post, 'https://api.weixin.qq.com/x?access_token=t').to_return(body: '{"errcode":40001,"errmsg":"invalid credential"}')
-    Wechat::Utils.post_request('https://api.weixin.qq.com/x?access_token=t', {})
-
-    assert_equal 1, events.size
-    event = events.first
-    assert_equal :post, event[:method]
-    assert_equal 'https://api.weixin.qq.com/x?access_token=t', event[:url]
-    assert_equal 200, event[:status]
-    assert_equal 40001, event[:errcode]
-    assert_equal 'invalid credential', event[:errmsg]
-    assert_nil event[:error]
-    assert_kind_of Integer, event[:duration_ms]
-  end
-
-  def test_it_should_notify_the_errcode_of_a_raw_request_answered_with_json
-    events = subscribe_events
-    stub_request(:post, 'https://api.weixin.qq.com/wxa/getwxacodeunlimit').to_return(body: '{"errcode":41030,"errmsg":"invalid page"}')
-    Wechat::Utils.post_request('https://api.weixin.qq.com/wxa/getwxacodeunlimit', {}, raw: true)
-    assert_equal [41030, 'invalid page'], events.first.values_at(:errcode, :errmsg)
-  end
-
-  def test_it_should_notify_without_an_errcode_for_a_raw_binary_body
-    events = subscribe_events
-    stub_request(:post, 'https://api.weixin.qq.com/wxa/getwxacodeunlimit').to_return(body: "\x89PNG".b)
-    Wechat::Utils.post_request('https://api.weixin.qq.com/wxa/getwxacodeunlimit', {}, raw: true)
-    assert_nil events.first[:errcode]
-  end
-
-  def test_it_should_notify_the_error_and_reraise_it
-    events = subscribe_events
-    start_server { |_req| [500, '{"errcode":-1}'] }
-    error = assert_raises(Faraday::ServerError) { Wechat::Utils.get_request(@server.url('/x')) }
-    assert_same error, events.first[:error]
-  end
-
-  def test_it_should_not_notify_a_request_rejected_for_unknown_options
-    events = subscribe_events
-    assert_raises(ArgumentError) { Wechat::Utils.get_request('https://api.weixin.qq.com/x', method: 'POST') }
-    assert_empty events
   end
 
   def test_post_request_should_reuse_the_same_connection_as_get_request
@@ -409,12 +365,6 @@ class Wechat::UtilsTest < Minitest::Test
   end
 
   private
-
-  def subscribe_events
-    events = []
-    @subscription = Wechat::Utils.subscribe { |event| events << event }
-    events
-  end
 
   def start_server(**options, &handler)
     @server = LocalHttpServer.new(**options, &handler).start

@@ -62,6 +62,12 @@ Wechat::Utils.post_request 'https://api.weixin.qq.com/cgi-bin/...', {action_name
 
 ```
 
+## Changes in 0.3.3
+
+- Pooled connections are dropped after 50 seconds idle instead of 60, before
+  WeChat closes them, so a POST no longer reuses a connection the server has
+  already closed (`Faraday::SSLError: SSL_read: unexpected eof while reading`).
+
 ## Changes in 0.3.2
 
 - `raw: true` returns the response body unparsed.

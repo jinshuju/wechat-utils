@@ -13,7 +13,7 @@ class Wechat::UtilsTest < Minitest::Test
   end
 
   def test_that_it_has_a_version_number
-    assert_equal '0.3.2', ::Wechat::Utils::VERSION
+    assert_equal '0.3.3', ::Wechat::Utils::VERSION
   end
 
   def test_it_should_return_snsapi_base_oauth_url_for_code
@@ -183,6 +183,10 @@ class Wechat::UtilsTest < Minitest::Test
     persistent = adapter.instance_variable_get(:@cached_connection)
     assert_equal Wechat::Utils::IdleTimeoutAdapter::IDLE_TIMEOUT, persistent.idle_timeout
     refute_equal 5, persistent.idle_timeout
+  end
+
+  def test_it_should_drop_idle_connections_before_wechat_closes_them
+    assert_operator Wechat::Utils::IdleTimeoutAdapter::IDLE_TIMEOUT, :<, 60
   end
 
   def test_it_should_reuse_one_tcp_connection_for_sequential_requests

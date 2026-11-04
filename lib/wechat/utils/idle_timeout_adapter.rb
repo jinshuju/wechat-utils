@@ -7,10 +7,12 @@ module Wechat
     # a form submission) are typically tens of seconds to minutes apart, so
     # without this the pooled connection is closed and re-established on
     # almost every call anyway. Raised once, right after the connection is
-    # built; if the server closes it first, net-http-persistent already
-    # retries on a fresh connection.
+    # built. WeChat closes idle keep-alive connections after about 60
+    # seconds, and net-http-persistent only retries idempotent requests on a
+    # fresh connection, so a POST reusing a connection the server has just
+    # closed fails with an EOF; staying below 60 keeps reuse safe.
     class IdleTimeoutAdapter < Faraday::Adapter::NetHttpPersistent
-      IDLE_TIMEOUT = 60
+      IDLE_TIMEOUT = 50
 
       # Known gap: Faraday::Adapter::NetHttp#call configures this
       # adapter's single shared Net::HTTP::Persistent manager (SSL,
